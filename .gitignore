@@ -12,8 +12,9 @@ dist
 dist-ssr
 *.local
 
-# NPM configuration (may contain auth tokens)
-.npmrc
+# NPM configuration - .npmrc with auth tokens should be ignored
+# The project .npmrc (with registry only) is safe to commit
+.npmrc.local
 
 # Editor directories and files
 .vscode/*
