@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* Custom utilities for mobile optimization */
+@utility tap-highlight-transparent {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Base styles */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Mobile-optimized button */
+.btn {
+  min-height: 44px;
+  min-width: 44px;
+  -webkit-tap-highlight-color: transparent;
+}
