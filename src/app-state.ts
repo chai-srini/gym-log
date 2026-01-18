@@ -132,6 +132,21 @@ export function addSetToExercise(exerciseIndex: number, set: Set): void {
   });
 }
 
+export function deleteExerciseFromWorkout(exerciseIndex: number): void {
+  const { currentWorkout } = state;
+  if (!currentWorkout || !currentWorkout.exercises) return;
+
+  const exercises = [...currentWorkout.exercises];
+  exercises.splice(exerciseIndex, 1);
+
+  setState({
+    currentWorkout: {
+      ...currentWorkout,
+      exercises,
+    },
+  });
+}
+
 export function cancelWorkout(): void {
   setState({
     currentScreen: 'home',

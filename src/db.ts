@@ -22,7 +22,7 @@ interface GymLogDB extends DBSchema {
 }
 
 const DB_NAME = 'gym-log';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbInstance: IDBPDatabase<GymLogDB> | null = null;
 
@@ -35,7 +35,7 @@ export async function initDB(): Promise<IDBPDatabase<GymLogDB>> {
   }
 
   dbInstance = await openDB<GymLogDB>(DB_NAME, DB_VERSION, {
-    upgrade(db) {
+    upgrade(db, oldVersion, _newVersion, transaction) {
       // Create workouts object store
       if (!db.objectStoreNames.contains('workouts')) {
         const workoutStore = db.createObjectStore('workouts', {
@@ -54,6 +54,21 @@ export async function initDB(): Promise<IDBPDatabase<GymLogDB>> {
         });
         exerciseStore.createIndex('name', 'name', { unique: true });
         exerciseStore.createIndex('lastUsed', 'lastUsed');
+      }
+
+      // Migrate from version 1 to version 2: Add category field to exercises
+      if (oldVersion < 2) {
+        const exerciseStore = transaction.objectStore('exercises');
+        exerciseStore.getAll().then((exercises) => {
+          exercises.forEach((exercise) => {
+            // Find category from STARTER_EXERCISES or default to 'Other'
+            const starterExercise = STARTER_EXERCISES.find(
+              (ex) => ex.name === exercise.name
+            );
+            (exercise as any).category = starterExercise?.category || 'Other';
+            exerciseStore.put(exercise);
+          });
+        });
       }
     },
   });
@@ -77,9 +92,10 @@ async function initializeStarterExercises(): Promise<void> {
     const tx = db.transaction('exercises', 'readwrite');
     const store = tx.objectStore('exercises');
 
-    for (const exerciseName of STARTER_EXERCISES) {
+    for (const exercise of STARTER_EXERCISES) {
       await store.add({
-        name: exerciseName,
+        name: exercise.name,
+        category: exercise.category,
         lastUsed: new Date().toISOString(),
         useCount: 0,
       });
@@ -160,10 +176,11 @@ export async function getLastWorkout(): Promise<Workout | undefined> {
 /**
  * Add a custom exercise to the library
  */
-export async function addExercise(name: string): Promise<number> {
+export async function addExercise(name: string, category: string = 'Other'): Promise<number> {
   const db = await initDB();
   const exercise: Omit<ExerciseLibraryItem, 'id'> = {
     name,
+    category: category as any,
     lastUsed: new Date().toISOString(),
     useCount: 0,
   };

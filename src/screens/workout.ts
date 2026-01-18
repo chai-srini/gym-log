@@ -2,7 +2,7 @@
  * Workout Screen - Active workout logging
  */
 
-import { getState, addExerciseToWorkout, addSetToExercise, cancelWorkout, setState, updateWorkoutName } from '../app-state';
+import { getState, addExerciseToWorkout, addSetToExercise, cancelWorkout, setState, updateWorkoutName, deleteExerciseFromWorkout } from '../app-state';
 import { getAllExercises, addWorkout, incrementExerciseUsage } from '../db';
 import type { Set } from '../types';
 import { startRestTimer, stopRestTimer, addTimerTime, getTimerState, subscribeToTimer, requestNotificationPermission } from '../utils/rest-timer';
@@ -147,7 +147,15 @@ function renderExercise(exercise: any, exerciseIndex: number): string {
 
   return `
     <div class="bg-white rounded-lg p-4 shadow-md border border-gray-200" data-exercise-index="${exerciseIndex}">
-      <h3 class="text-lg font-semibold text-gray-800 mb-3">${exercise.exerciseName}</h3>
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-lg font-semibold text-gray-800">${exercise.exerciseName}</h3>
+        <button
+          class="delete-exercise-btn p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+          data-exercise-index="${exerciseIndex}"
+          title="Delete exercise">
+          🗑️
+        </button>
+      </div>
 
       <!-- Sets List -->
       ${exercise.sets.length > 0 ? `
@@ -276,6 +284,18 @@ export function attachWorkoutEventListeners(): void {
     btn.addEventListener('click', (e) => {
       const exerciseIndex = parseInt((e.target as HTMLElement).dataset.exercise || '0');
       addSetHandler(exerciseIndex);
+    });
+  });
+
+  // Delete Exercise buttons
+  document.querySelectorAll('.delete-exercise-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const exerciseIndex = parseInt((e.target as HTMLElement).dataset.exerciseIndex || '0');
+      const exerciseName = (e.target as HTMLElement).closest('[data-exercise-index]')?.querySelector('h3')?.textContent || 'this exercise';
+
+      if (confirm(`Delete ${exerciseName}? All sets will be lost.`)) {
+        deleteExerciseFromWorkout(exerciseIndex);
+      }
     });
   });
 
