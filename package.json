@@ -10,7 +10,8 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:mobile": "playwright test --project='Mobile Chrome' --project='Mobile Safari'",
-    "test:ui": "playwright test --ui"
+    "test:ui": "playwright test --ui",
+    "generate-icons": "open scripts/generate-icons.html || xdg-open scripts/generate-icons.html"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.18",

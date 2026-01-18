@@ -1,0 +1,206 @@
+/**
+ * Exercise Library Screen
+ */
+
+import { setState } from '../app-state';
+import { getAllExercises, addExercise, deleteExercise } from '../db';
+import { STARTER_EXERCISES } from '../types';
+import type { ExerciseLibraryItem } from '../types';
+
+export async function renderExerciseLibraryScreen(): Promise<string> {
+  const exercises = await getAllExercises();
+
+  // Sort by usage (most used first), then alphabetically
+  const sortedExercises = exercises.sort((a, b) => {
+    if (b.useCount !== a.useCount) {
+      return b.useCount - a.useCount;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  return `
+    <div class="min-h-screen flex flex-col bg-gray-50">
+      <header class="bg-white shadow-sm sticky top-0 z-10">
+        <div class="flex items-center p-4">
+          <button
+            id="back-to-home-btn"
+            class="p-2 -ml-2 text-gray-600 hover:text-gray-900 active:text-gray-900 transition min-h-touch tap-highlight-transparent">
+            ← Back
+          </button>
+          <h1 class="text-xl font-bold text-gray-900 ml-2">Exercise Library</h1>
+        </div>
+      </header>
+
+      <main class="flex-1 p-4 max-w-2xl mx-auto w-full">
+        <!-- Search Bar -->
+        <div class="mb-4">
+          <input
+            id="exercise-search"
+            type="text"
+            placeholder="🔍 Search exercises..."
+            class="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+
+        <!-- Add Custom Exercise -->
+        <div class="mb-6 bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+          <h3 class="font-semibold text-gray-800 mb-3">Add Custom Exercise</h3>
+          <div class="flex gap-2">
+            <input
+              id="new-exercise-input"
+              type="text"
+              placeholder="Exercise name..."
+              class="flex-1 p-3 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <button
+              id="add-exercise-btn"
+              class="py-3 px-6 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 active:bg-green-800 transition min-h-touch tap-highlight-transparent whitespace-nowrap">
+              ➕ Add
+            </button>
+          </div>
+        </div>
+
+        <!-- Exercise Stats -->
+        <div class="mb-4 text-sm text-gray-600">
+          <span class="font-medium">${exercises.length} exercises</span>
+          <span class="text-gray-400">•</span>
+          <span>${exercises.filter(ex => !STARTER_EXERCISES.includes(ex.name)).length} custom</span>
+        </div>
+
+        <!-- Exercise List -->
+        <div id="exercise-list" class="space-y-2">
+          ${sortedExercises.map(exercise => renderExerciseCard(exercise)).join('')}
+        </div>
+
+        ${sortedExercises.length === 0 ? `
+          <div class="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
+            <p class="text-gray-500">No exercises found</p>
+            <p class="text-sm text-gray-400 mt-1">Add your first custom exercise above!</p>
+          </div>
+        ` : ''}
+      </main>
+    </div>
+  `;
+}
+
+function renderExerciseCard(exercise: ExerciseLibraryItem): string {
+  const isCustom = !STARTER_EXERCISES.includes(exercise.name);
+  const lastUsedDate = exercise.lastUsed ? new Date(exercise.lastUsed).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }) : 'Never';
+
+  return `
+    <div class="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition exercise-card" data-exercise-name="${exercise.name.toLowerCase()}">
+      <div class="flex items-start justify-between">
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <h3 class="font-semibold text-gray-900">${exercise.name}</h3>
+            ${isCustom ? '<span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Custom</span>' : ''}
+          </div>
+          <div class="flex items-center gap-3 mt-1 text-sm text-gray-500">
+            <span>Used ${exercise.useCount} time${exercise.useCount !== 1 ? 's' : ''}</span>
+            ${exercise.useCount > 0 ? `<span>•</span><span>Last: ${lastUsedDate}</span>` : ''}
+          </div>
+        </div>
+        ${isCustom ? `
+          <button
+            data-exercise-id="${exercise.id}"
+            class="delete-exercise-btn ml-3 p-2 text-red-600 hover:bg-red-50 rounded-lg transition min-h-touch tap-highlight-transparent">
+            🗑️
+          </button>
+        ` : `
+          <span class="text-2xl ml-3">💪</span>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+export function attachExerciseLibraryEventListeners(): void {
+  // Back button
+  const backBtn = document.getElementById('back-to-home-btn');
+  backBtn?.addEventListener('click', () => {
+    setState({ currentScreen: 'home' });
+  });
+
+  // Search functionality
+  const searchInput = document.getElementById('exercise-search') as HTMLInputElement;
+  searchInput?.addEventListener('input', (e) => {
+    const query = (e.target as HTMLInputElement).value.toLowerCase();
+    const exerciseCards = document.querySelectorAll('.exercise-card');
+
+    exerciseCards.forEach((card) => {
+      const exerciseName = (card as HTMLElement).getAttribute('data-exercise-name') || '';
+      if (exerciseName.includes(query)) {
+        (card as HTMLElement).style.display = '';
+      } else {
+        (card as HTMLElement).style.display = 'none';
+      }
+    });
+  });
+
+  // Add custom exercise
+  const addBtn = document.getElementById('add-exercise-btn');
+  const newExerciseInput = document.getElementById('new-exercise-input') as HTMLInputElement;
+
+  addBtn?.addEventListener('click', async () => {
+    await addCustomExerciseHandler(newExerciseInput);
+  });
+
+  // Allow pressing Enter in the input field
+  newExerciseInput?.addEventListener('keypress', async (e) => {
+    if (e.key === 'Enter') {
+      await addCustomExerciseHandler(newExerciseInput);
+    }
+  });
+
+  // Delete custom exercises
+  const deleteButtons = document.querySelectorAll('.delete-exercise-btn');
+  deleteButtons.forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const exerciseId = (btn as HTMLElement).getAttribute('data-exercise-id');
+      if (!exerciseId) return;
+
+      if (confirm('Delete this custom exercise? This cannot be undone.')) {
+        try {
+          await deleteExercise(Number(exerciseId));
+          // Re-render the screen
+          setState({ currentScreen: 'exercise-library' });
+        } catch (error) {
+          console.error('Error deleting exercise:', error);
+          alert('Failed to delete exercise. Please try again.');
+        }
+      }
+    });
+  });
+}
+
+async function addCustomExerciseHandler(input: HTMLInputElement): Promise<void> {
+  const exerciseName = input?.value.trim();
+
+  if (!exerciseName) {
+    alert('Please enter an exercise name');
+    return;
+  }
+
+  // Check if exercise already exists
+  const allExercises = await getAllExercises();
+  const exists = allExercises.some(ex =>
+    ex.name.toLowerCase() === exerciseName.toLowerCase()
+  );
+
+  if (exists) {
+    alert('This exercise already exists in your library');
+    return;
+  }
+
+  try {
+    await addExercise(exerciseName);
+    input.value = '';
+    // Re-render the screen
+    setState({ currentScreen: 'exercise-library' });
+  } catch (error) {
+    console.error('Error adding exercise:', error);
+    alert('Failed to add exercise. Please try again.');
+  }
+}

@@ -11,7 +11,7 @@ import {
   getAllWorkouts,
   getLastWorkout,
   updateWorkout,
-  deleteWorkout,
+  // deleteWorkout,
   addExercise,
   searchExercises,
   getExercisesByUsage,

@@ -2,13 +2,14 @@
  * Workout Screen - Active workout logging
  */
 
-import { getState, addExerciseToWorkout, addSetToExercise, cancelWorkout, setState } from '../app-state';
+import { getState, addExerciseToWorkout, addSetToExercise, cancelWorkout, setState, updateWorkoutName } from '../app-state';
 import { getAllExercises, addWorkout, incrementExerciseUsage } from '../db';
-import { DEFAULT_SETTINGS } from '../types';
 import type { Set } from '../types';
+import { startRestTimer, stopRestTimer, addTimerTime, getTimerState, subscribeToTimer, requestNotificationPermission } from '../utils/rest-timer';
 
 let workoutStartTime: number = Date.now();
 let timerInterval: number | null = null;
+let timerUnsubscribe: (() => void) | null = null;
 
 export async function renderWorkoutScreen(): Promise<string> {
   workoutStartTime = Date.now();
@@ -21,8 +22,13 @@ export async function renderWorkoutScreen(): Promise<string> {
 
   startTimer();
 
+  const restTimerState = getTimerState();
+
   return `
     <div class="min-h-screen flex flex-col bg-gray-50">
+      <!-- Rest Timer Modal -->
+      ${restTimerState.isActive ? renderRestTimer(restTimerState) : ''}
+
       <!-- Header with Timer -->
       <header class="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-10">
         <div class="flex justify-between items-center">
@@ -40,6 +46,20 @@ export async function renderWorkoutScreen(): Promise<string> {
 
       <!-- Main Content -->
       <main class="flex-1 p-4 max-w-2xl mx-auto w-full">
+        <!-- Workout Name -->
+        <div class="mb-4 bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+          <label for="workout-name-input" class="block text-sm font-medium text-gray-700 mb-2">
+            Workout Name (Optional)
+          </label>
+          <input
+            id="workout-name-input"
+            type="text"
+            placeholder="e.g., Back and Biceps, Leg Day"
+            value="${currentWorkout.name || ''}"
+            class="w-full p-3 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+
         <!-- Exercises List -->
         <div id="exercises-container" class="space-y-4">
           ${currentWorkout.exercises && currentWorkout.exercises.length > 0
@@ -81,6 +101,46 @@ export async function renderWorkoutScreen(): Promise<string> {
   `;
 }
 
+function renderRestTimer(timerState: any): string {
+  const minutes = Math.floor(timerState.remainingSeconds / 60);
+  const seconds = timerState.remainingSeconds % 60;
+  const progress = ((timerState.totalSeconds - timerState.remainingSeconds) / timerState.totalSeconds) * 100;
+
+  return `
+    <div id="rest-timer-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+      <div class="bg-white rounded-2xl p-8 mx-4 max-w-md w-full shadow-2xl">
+        <div class="text-center">
+          <h2 class="text-2xl font-bold text-gray-900 mb-2">Rest Timer</h2>
+          <p class="text-sm text-gray-600 mb-6">Take a break between sets</p>
+
+          <div class="relative mb-6">
+            <svg class="transform -rotate-90 w-48 h-48 mx-auto">
+              <circle cx="96" cy="96" r="88" stroke="#e5e7eb" stroke-width="8" fill="none" />
+              <circle cx="96" cy="96" r="88" stroke="#2563eb" stroke-width="8" fill="none" stroke-dasharray="553" stroke-dashoffset="${553 * (1 - progress / 100)}" stroke-linecap="round" class="transition-all duration-1000" />
+            </svg>
+            <div class="absolute inset-0 flex items-center justify-center">
+              <div class="text-center">
+                <div id="rest-timer-display" class="text-6xl font-bold text-gray-900 tabular-nums">
+                  ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}
+                </div>
+                <div class="text-sm text-gray-500 mt-1">remaining</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 mb-4">
+            <button id="rest-timer-add-15" class="py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition font-medium text-sm">+15s</button>
+            <button id="rest-timer-add-30" class="py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition font-medium text-sm">+30s</button>
+            <button id="rest-timer-add-60" class="py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition font-medium text-sm">+1m</button>
+          </div>
+
+          <button id="rest-timer-skip" class="w-full py-4 px-6 bg-blue-600 text-white rounded-lg text-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition">Skip Rest</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderExercise(exercise: any, exerciseIndex: number): string {
   const { settings } = getState();
   const lastSet = exercise.sets[exercise.sets.length - 1];
@@ -92,10 +152,10 @@ function renderExercise(exercise: any, exerciseIndex: number): string {
       <!-- Sets List -->
       ${exercise.sets.length > 0 ? `
         <div class="space-y-2 mb-4">
-          ${exercise.sets.map((set: Set, idx: number) => `
+          ${exercise.sets.map((set: Set) => `
             <div class="flex items-center justify-between text-sm bg-gray-50 p-2 rounded">
               <span class="font-medium text-gray-600">Set ${set.setNumber}</span>
-              <span class="text-gray-800">${set.weight} lbs × ${set.reps} reps</span>
+              <span class="text-gray-800">${set.weight} ${settings.weightUnit} × ${set.reps} reps</span>
               <span class="text-gray-500">RPE ${set.rpe}% • ${set.restTime}s</span>
             </div>
           `).join('')}
@@ -105,7 +165,7 @@ function renderExercise(exercise: any, exerciseIndex: number): string {
       <!-- Add Set Form -->
       <div class="grid grid-cols-2 gap-2 mb-3">
         <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Weight (lbs)</label>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Weight (${settings.weightUnit})</label>
           <input
             type="number"
             class="set-input w-full p-2 border border-gray-300 rounded"
@@ -176,6 +236,29 @@ function stopTimer(): void {
 }
 
 export function attachWorkoutEventListeners(): void {
+  // Request notification permission on first interaction
+  requestNotificationPermission();
+
+  // Unsubscribe from previous timer if exists
+  if (timerUnsubscribe) {
+    timerUnsubscribe();
+  }
+
+  // Subscribe to timer updates
+  timerUnsubscribe = subscribeToTimer(() => {
+    const currentState = getState();
+    if (currentState.currentScreen === 'workout') {
+      setState({ ...currentState });
+    }
+  });
+
+  // Workout Name Input - update on blur to avoid re-render issues
+  const workoutNameInput = document.getElementById('workout-name-input') as HTMLInputElement;
+  workoutNameInput?.addEventListener('blur', (e) => {
+    const name = (e.target as HTMLInputElement).value;
+    updateWorkoutName(name);
+  });
+
   // Add Exercise
   const addExerciseBtn = document.getElementById('add-exercise-btn');
   const exerciseSelect = document.getElementById('exercise-select') as HTMLSelectElement;
@@ -201,6 +284,11 @@ export function attachWorkoutEventListeners(): void {
   cancelBtn?.addEventListener('click', () => {
     if (confirm('Cancel this workout? All progress will be lost.')) {
       stopTimer();
+      stopRestTimer();
+      if (timerUnsubscribe) {
+        timerUnsubscribe();
+        timerUnsubscribe = null;
+      }
       cancelWorkout();
     }
   });
@@ -209,6 +297,27 @@ export function attachWorkoutEventListeners(): void {
   const completeBtn = document.getElementById('complete-workout-btn');
   completeBtn?.addEventListener('click', async () => {
     await completeWorkoutHandler();
+  });
+
+  // Rest Timer Controls
+  const restTimerSkip = document.getElementById('rest-timer-skip');
+  restTimerSkip?.addEventListener('click', () => {
+    stopRestTimer();
+  });
+
+  const restTimerAdd15 = document.getElementById('rest-timer-add-15');
+  restTimerAdd15?.addEventListener('click', () => {
+    addTimerTime(15);
+  });
+
+  const restTimerAdd30 = document.getElementById('rest-timer-add-30');
+  restTimerAdd30?.addEventListener('click', () => {
+    addTimerTime(30);
+  });
+
+  const restTimerAdd60 = document.getElementById('rest-timer-add-60');
+  restTimerAdd60?.addEventListener('click', () => {
+    addTimerTime(60);
   });
 }
 
@@ -240,6 +349,9 @@ function addSetHandler(exerciseIndex: number): void {
   };
 
   addSetToExercise(exerciseIndex, newSet);
+
+  // Start rest timer after adding set
+  startRestTimer(newSet.restTime);
 }
 
 async function completeWorkoutHandler(): Promise<void> {
@@ -251,6 +363,15 @@ async function completeWorkoutHandler(): Promise<void> {
   }
 
   stopTimer();
+  stopRestTimer();
+  if (timerUnsubscribe) {
+    timerUnsubscribe();
+    timerUnsubscribe = null;
+  }
+
+  // Read workout name from input
+  const workoutNameInput = document.getElementById('workout-name-input') as HTMLInputElement;
+  const workoutName = workoutNameInput?.value || '';
 
   const endTime = new Date();
   const startTime = new Date(currentWorkout.startTime!);
@@ -258,6 +379,7 @@ async function completeWorkoutHandler(): Promise<void> {
 
   const workoutToSave = {
     ...currentWorkout,
+    name: workoutName,
     endTime: endTime.toISOString(),
     duration,
   };
