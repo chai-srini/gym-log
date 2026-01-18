@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# NPM configuration (may contain auth tokens)
+.npmrc
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
