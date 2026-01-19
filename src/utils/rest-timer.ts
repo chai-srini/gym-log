@@ -5,16 +5,18 @@
 
 export interface RestTimerState {
   isActive: boolean;
-  totalSeconds: number;
-  remainingSeconds: number;
+  presetSeconds: number;
+  elapsedSeconds: number;
+  hasNotified: boolean;
   startTime: number | null;
   intervalId: number | null;
 }
 
 let timerState: RestTimerState = {
   isActive: false,
-  totalSeconds: 0,
-  remainingSeconds: 0,
+  presetSeconds: 0,
+  elapsedSeconds: 0,
+  hasNotified: false,
   startTime: null,
   intervalId: null,
 };
@@ -46,16 +48,22 @@ export function startRestTimer(seconds: number): void {
   // Clear any existing timer
   stopRestTimer();
 
+  // Request notification permission
+  requestNotificationPermission();
+
   timerState = {
     isActive: true,
-    totalSeconds: seconds,
-    remainingSeconds: seconds,
+    presetSeconds: seconds,
+    elapsedSeconds: 0,
+    hasNotified: false,
     startTime: Date.now(),
     intervalId: window.setInterval(() => {
-      timerState.remainingSeconds -= 1;
+      timerState.elapsedSeconds += 1;
 
-      if (timerState.remainingSeconds <= 0) {
-        completeTimer();
+      // Notify at preset time (once), but keep counting
+      if (timerState.elapsedSeconds === timerState.presetSeconds && !timerState.hasNotified) {
+        notifyAtPreset();
+        timerState.hasNotified = true;
       }
 
       notifyTimerUpdate();
@@ -75,8 +83,9 @@ export function stopRestTimer(): void {
 
   timerState = {
     isActive: false,
-    totalSeconds: 0,
-    remainingSeconds: 0,
+    presetSeconds: 0,
+    elapsedSeconds: 0,
+    hasNotified: false,
     startTime: null,
     intervalId: null,
   };
@@ -85,14 +94,12 @@ export function stopRestTimer(): void {
 }
 
 /**
- * Add time to the current timer
+ * Add time to the current timer (no longer used in count-up timer)
+ * Kept for backward compatibility but does nothing
  */
 export function addTimerTime(seconds: number): void {
-  if (!timerState.isActive) return;
-
-  timerState.remainingSeconds += seconds;
-  timerState.totalSeconds += seconds;
-  notifyTimerUpdate();
+  // No-op in count-up timer
+  return;
 }
 
 /**
@@ -103,11 +110,9 @@ export function getTimerState(): RestTimerState {
 }
 
 /**
- * Timer completion - notify user
+ * Notify user at preset time (but timer continues)
  */
-function completeTimer(): void {
-  stopRestTimer();
-
+function notifyAtPreset(): void {
   // Vibration notification (if supported)
   if ('vibrate' in navigator) {
     navigator.vibrate([200, 100, 200, 100, 200]);
@@ -118,8 +123,8 @@ function completeTimer(): void {
 
   // Show notification if permission granted
   if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification('Rest Complete! 💪', {
-      body: 'Time for your next set',
+    new Notification('Rest Time Reached! 💪', {
+      body: 'Suggested rest complete - take more time if needed',
       icon: '/icons/icon-192x192.png',
       badge: '/icons/icon-72x72.png',
       tag: 'rest-timer',

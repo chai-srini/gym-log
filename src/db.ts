@@ -27,7 +27,7 @@ interface GymLogDB extends DBSchema {
 }
 
 const DB_NAME = 'gym-log';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let dbInstance: IDBPDatabase<GymLogDB> | null = null;
 
@@ -98,6 +98,21 @@ export async function initDB(): Promise<IDBPDatabase<GymLogDB>> {
           });
         });
       }
+
+      // Migrate from version 4 to version 5: Add type field to exercises
+      if (oldVersion < 5) {
+        const exerciseStore = transaction.objectStore('exercises');
+        exerciseStore.getAll().then((exercises) => {
+          exercises.forEach((exercise) => {
+            // Find matching starter exercise to get its type
+            const starterExercise = STARTER_EXERCISES.find(
+              (ex) => ex.name === exercise.name
+            );
+            (exercise as any).type = starterExercise?.type || 'strength';
+            exerciseStore.put(exercise);
+          });
+        });
+      }
     },
   });
 
@@ -127,6 +142,7 @@ async function initializeStarterExercises(): Promise<void> {
       await store.add({
         name: exercise.name,
         category: exercise.category,
+        type: exercise.type,
         lastUsed: new Date().toISOString(),
         useCount: 0,
         links: [],
@@ -237,11 +253,12 @@ export async function getLastWorkout(): Promise<Workout | undefined> {
 /**
  * Add a custom exercise to the library
  */
-export async function addExercise(name: string, category: string = 'Other'): Promise<number> {
+export async function addExercise(name: string, category: string = 'Other', type: string = 'strength'): Promise<number> {
   const db = await initDB();
   const exercise: Omit<ExerciseLibraryItem, 'id'> = {
     name,
     category: category as any,
+    type: type as any,
     lastUsed: new Date().toISOString(),
     useCount: 0,
     links: [],

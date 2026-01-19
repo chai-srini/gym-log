@@ -80,6 +80,13 @@ export async function renderExerciseLibraryScreen(): Promise<string> {
                 class="flex-1 p-3 border border-gray-300 rounded-lg text-gray-800 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                 ${categories.map(cat => `<option value="${cat}">${cat}</option>`).join('')}
               </select>
+              <select
+                id="new-exercise-type"
+                class="flex-1 p-3 border border-gray-300 rounded-lg text-gray-800 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <option value="strength">🏋️ Strength</option>
+                <option value="cardio">🏃 Cardio</option>
+                <option value="bodyweight">🤸 Bodyweight</option>
+              </select>
               <button
                 id="add-exercise-btn"
                 class="py-3 px-6 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 active:bg-green-800 transition min-h-touch tap-highlight-transparent whitespace-nowrap">
@@ -144,6 +151,15 @@ function renderExerciseCard(exercise: ExerciseLibraryItem): string {
     'Other': 'bg-gray-100 text-gray-700',
   };
 
+  // Type badge display
+  const typeEmoji: Record<string, string> = {
+    'strength': '🏋️',
+    'cardio': '🏃',
+    'bodyweight': '🤸',
+  };
+  const exerciseType = exercise.type || 'strength';
+  const typeLabel = typeEmoji[exerciseType] || '🏋️';
+
   const links = exercise.links || [];
   const hasLinks = links.length > 0;
 
@@ -154,6 +170,7 @@ function renderExerciseCard(exercise: ExerciseLibraryItem): string {
           <div class="flex items-center gap-2 flex-wrap">
             <h3 class="font-semibold text-gray-900">${exercise.name}</h3>
             <span class="text-xs ${categoryColors[exercise.category]} px-2 py-1 rounded">${exercise.category}</span>
+            <span class="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">${typeLabel} ${exerciseType.charAt(0).toUpperCase() + exerciseType.slice(1)}</span>
             ${isCustom ? '<span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Custom</span>' : ''}
           </div>
           <div class="flex items-center gap-3 mt-1 text-sm text-gray-500">
@@ -272,15 +289,16 @@ export function attachExerciseLibraryEventListeners(): void {
   const addBtn = document.getElementById('add-exercise-btn');
   const newExerciseInput = document.getElementById('new-exercise-input') as HTMLInputElement;
   const newExerciseCategory = document.getElementById('new-exercise-category') as HTMLSelectElement;
+  const newExerciseType = document.getElementById('new-exercise-type') as HTMLSelectElement;
 
   addBtn?.addEventListener('click', async () => {
-    await addCustomExerciseHandler(newExerciseInput, newExerciseCategory);
+    await addCustomExerciseHandler(newExerciseInput, newExerciseCategory, newExerciseType);
   });
 
   // Allow pressing Enter in the input field
   newExerciseInput?.addEventListener('keypress', async (e) => {
     if (e.key === 'Enter') {
-      await addCustomExerciseHandler(newExerciseInput, newExerciseCategory);
+      await addCustomExerciseHandler(newExerciseInput, newExerciseCategory, newExerciseType);
     }
   });
 
@@ -343,9 +361,10 @@ export function attachExerciseLibraryEventListeners(): void {
   });
 }
 
-async function addCustomExerciseHandler(input: HTMLInputElement, categorySelect: HTMLSelectElement): Promise<void> {
+async function addCustomExerciseHandler(input: HTMLInputElement, categorySelect: HTMLSelectElement, typeSelect: HTMLSelectElement): Promise<void> {
   const exerciseName = input?.value.trim();
   const category = categorySelect?.value || 'Other';
+  const type = typeSelect?.value || 'strength';
 
   if (!exerciseName) {
     alert('Please enter an exercise name');
@@ -386,7 +405,7 @@ async function addCustomExerciseHandler(input: HTMLInputElement, categorySelect:
   }
 
   try {
-    const exerciseId = await addExercise(exerciseName, category);
+    const exerciseId = await addExercise(exerciseName, category, type);
 
     // If link was provided, add it to the exercise
     if (linkTitle && linkUrl && exerciseId) {

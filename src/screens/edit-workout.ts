@@ -3,8 +3,8 @@
  */
 
 import { getState, setState } from '../app-state';
-import { updateWorkout, getAllExercises } from '../db';
-import type { Workout, Exercise } from '../types';
+import { updateWorkout, getAllExercises, getExerciseByName } from '../db';
+import type { Workout, Exercise, ExerciseLibraryItem } from '../types';
 
 export async function renderEditWorkoutScreen(): Promise<string> {
   const { currentWorkout, settings } = getState();
@@ -15,6 +15,21 @@ export async function renderEditWorkoutScreen(): Promise<string> {
   }
 
   const workout = currentWorkout as Workout;
+
+  // Fetch exercise library data for all exercises in the workout
+  const exerciseDataMap = new Map<string, ExerciseLibraryItem>();
+  if (workout.exercises && workout.exercises.length > 0) {
+    const exerciseDataPromises = workout.exercises.map(ex =>
+      getExerciseByName(ex.exerciseName)
+    );
+    const exerciseDataResults = await Promise.all(exerciseDataPromises);
+    workout.exercises.forEach((ex, idx) => {
+      const data = exerciseDataResults[idx];
+      if (data) {
+        exerciseDataMap.set(ex.exerciseName, data);
+      }
+    });
+  }
 
   return `
     <div class="min-h-screen flex flex-col bg-gray-50">
@@ -64,7 +79,7 @@ export async function renderEditWorkoutScreen(): Promise<string> {
         <!-- Exercises -->
         <div id="exercises-container" class="space-y-4 mb-6">
           ${workout.exercises && workout.exercises.length > 0
-            ? workout.exercises.map((ex, idx) => renderExerciseForEdit(ex, idx, settings.weightUnit)).join('')
+            ? workout.exercises.map((ex, idx) => renderExerciseForEdit(ex, idx, settings.weightUnit, exerciseDataMap)).join('')
             : `
             <div class="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
               <p class="text-gray-500 text-lg">No exercises</p>
@@ -99,9 +114,104 @@ export async function renderEditWorkoutScreen(): Promise<string> {
   `;
 }
 
-function renderExerciseForEdit(exercise: Exercise, exerciseIndex: number, weightUnit: string): string {
+function renderExerciseForEdit(exercise: Exercise, exerciseIndex: number, weightUnit: string, exerciseDataMap: Map<string, ExerciseLibraryItem>): string {
+  const exerciseData = exerciseDataMap.get(exercise.exerciseName);
+  const exerciseType = exerciseData?.type || 'strength';
+
+  // Helper to render set display based on type
+  const renderSetDisplay = (set: any, setIndex: number) => {
+    if (exerciseType === 'cardio') {
+      const minutes = Math.round((set.duration || 0) / 60);
+      return `
+        <div class="flex items-center gap-2 text-sm bg-gray-50 p-2 rounded" data-set-index="${setIndex}">
+          <span class="font-medium text-gray-600 w-20">Activity:</span>
+          <input type="number" class="set-duration w-20 p-1 border rounded text-center" value="${minutes}" placeholder="Minutes">
+          <span class="text-xs text-gray-500">minutes</span>
+          <button class="delete-set-btn ml-auto p-1 text-red-600 hover:bg-red-100 rounded text-xs" data-exercise-index="${exerciseIndex}" data-set-index="${setIndex}">
+            ✕
+          </button>
+        </div>
+      `;
+    } else if (exerciseType === 'bodyweight') {
+      return `
+        <div class="flex items-center gap-2 text-sm bg-gray-50 p-2 rounded" data-set-index="${setIndex}">
+          <span class="font-medium text-gray-600 w-12">Set ${set.setNumber}</span>
+          <input type="number" class="set-reps-input w-20 p-1 border rounded text-center" value="${set.reps}" placeholder="Reps">
+          <span class="text-xs text-gray-500">reps</span>
+          <button class="delete-set-btn ml-auto p-1 text-red-600 hover:bg-red-100 rounded text-xs" data-exercise-index="${exerciseIndex}" data-set-index="${setIndex}">
+            ✕
+          </button>
+        </div>
+      `;
+    } else {
+      // strength
+      return `
+        <div class="flex items-center gap-2 text-sm bg-gray-50 p-2 rounded" data-set-index="${setIndex}">
+          <span class="font-medium text-gray-600 w-12">Set ${set.setNumber}</span>
+          <input type="number" class="set-weight-input w-20 p-1 border rounded text-center" value="${set.weight}" placeholder="Weight">
+          <span class="text-gray-500">×</span>
+          <input type="number" class="set-reps-input w-16 p-1 border rounded text-center" value="${set.reps}" placeholder="Reps">
+          <input type="number" class="set-rpe-input w-16 p-1 border rounded text-center" value="${set.rpe}" placeholder="RPE">
+          <span class="text-xs text-gray-500">${weightUnit} • reps • RPE%</span>
+          <button class="delete-set-btn ml-auto p-1 text-red-600 hover:bg-red-100 rounded text-xs" data-exercise-index="${exerciseIndex}" data-set-index="${setIndex}">
+            ✕
+          </button>
+        </div>
+      `;
+    }
+  };
+
+  // Helper to render input form based on type
+  const renderInputForm = () => {
+    if (exerciseType === 'cardio') {
+      return `
+        <div class="grid grid-cols-1 gap-2">
+          <input
+            type="number"
+            class="new-set-duration p-2 border border-gray-300 rounded text-sm"
+            data-exercise="${exerciseIndex}"
+            placeholder="Duration (minutes)">
+        </div>
+      `;
+    } else if (exerciseType === 'bodyweight') {
+      return `
+        <div class="grid grid-cols-1 gap-2">
+          <input
+            type="number"
+            class="new-set-reps p-2 border border-gray-300 rounded text-sm"
+            data-exercise="${exerciseIndex}"
+            placeholder="Reps">
+        </div>
+      `;
+    } else {
+      // strength
+      return `
+        <div class="grid grid-cols-3 gap-2">
+          <input
+            type="number"
+            class="new-set-weight p-2 border border-gray-300 rounded text-sm"
+            data-exercise="${exerciseIndex}"
+            placeholder="Weight">
+          <input
+            type="number"
+            class="new-set-reps p-2 border border-gray-300 rounded text-sm"
+            data-exercise="${exerciseIndex}"
+            placeholder="Reps">
+          <input
+            type="number"
+            class="new-set-rpe p-2 border border-gray-300 rounded text-sm"
+            data-exercise="${exerciseIndex}"
+            placeholder="RPE%">
+        </div>
+      `;
+    }
+  };
+
+  const buttonText = exerciseType === 'cardio' ? '+ Log Activity' : '+ Add Set';
+  const noSetsText = exerciseType === 'cardio' ? 'No activity logged' : 'No sets';
+
   return `
-    <div class="bg-white rounded-lg p-4 shadow-md border border-gray-200" data-exercise-index="${exerciseIndex}">
+    <div class="bg-white rounded-lg p-4 shadow-md border border-gray-200" data-exercise-index="${exerciseIndex}" data-exercise-type="${exerciseType}">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-lg font-semibold text-gray-800">${exercise.exerciseName}</h3>
         <button
@@ -121,44 +231,16 @@ function renderExerciseForEdit(exercise: Exercise, exerciseIndex: number, weight
       <!-- Sets List -->
       ${exercise.sets.length > 0 ? `
         <div class="space-y-2 mb-3">
-          ${exercise.sets.map((set, setIndex) => `
-            <div class="flex items-center gap-2 text-sm bg-gray-50 p-2 rounded" data-set-index="${setIndex}">
-              <span class="font-medium text-gray-600 w-12">Set ${set.setNumber}</span>
-              <input type="number" class="set-weight-input w-20 p-1 border rounded text-center" value="${set.weight}" placeholder="Weight">
-              <span class="text-gray-500">×</span>
-              <input type="number" class="set-reps-input w-16 p-1 border rounded text-center" value="${set.reps}" placeholder="Reps">
-              <input type="number" class="set-rpe-input w-16 p-1 border rounded text-center" value="${set.rpe}" placeholder="RPE">
-              <span class="text-xs text-gray-500">${weightUnit} • reps • RPE%</span>
-              <button class="delete-set-btn ml-auto p-1 text-red-600 hover:bg-red-100 rounded text-xs" data-exercise-index="${exerciseIndex}" data-set-index="${setIndex}">
-                ✕
-              </button>
-            </div>
-          `).join('')}
+          ${exercise.sets.map((set, setIndex) => renderSetDisplay(set, setIndex)).join('')}
         </div>
-      ` : '<p class="text-sm text-gray-500 mb-3">No sets</p>'}
+      ` : `<p class="text-sm text-gray-500 mb-3">${noSetsText}</p>`}
 
       <!-- Add Set Form -->
-      <div class="grid grid-cols-3 gap-2">
-        <input
-          type="number"
-          class="new-set-weight p-2 border border-gray-300 rounded text-sm"
-          data-exercise="${exerciseIndex}"
-          placeholder="Weight">
-        <input
-          type="number"
-          class="new-set-reps p-2 border border-gray-300 rounded text-sm"
-          data-exercise="${exerciseIndex}"
-          placeholder="Reps">
-        <input
-          type="number"
-          class="new-set-rpe p-2 border border-gray-300 rounded text-sm"
-          data-exercise="${exerciseIndex}"
-          placeholder="RPE%">
-      </div>
+      ${renderInputForm()}
       <button
         class="add-set-btn w-full mt-2 py-2 px-4 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition text-sm"
         data-exercise="${exerciseIndex}">
-        + Add Set
+        ${buttonText}
       </button>
     </div>
   `;
@@ -212,6 +294,7 @@ export function attachEditWorkoutEventListeners(): void {
   const setWeightInputs = document.querySelectorAll('.set-weight-input');
   const setRepsInputs = document.querySelectorAll('.set-reps-input');
   const setRpeInputs = document.querySelectorAll('.set-rpe-input');
+  const setDurationInputs = document.querySelectorAll('.set-duration');
 
   [setWeightInputs, setRepsInputs, setRpeInputs].forEach((inputs, fieldIndex) => {
     inputs.forEach((input) => {
@@ -235,6 +318,26 @@ export function attachEditWorkoutEventListeners(): void {
 
         setState({ currentWorkout: workout });
       });
+    });
+  });
+
+  // Handle cardio duration updates
+  setDurationInputs.forEach((input) => {
+    input.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      const setDiv = target.closest('[data-set-index]');
+      const exerciseDiv = target.closest('[data-exercise-index]');
+
+      if (!setDiv || !exerciseDiv) return;
+
+      const exerciseIndex = parseInt((exerciseDiv as HTMLElement).dataset.exerciseIndex || '0');
+      const setIndex = parseInt((setDiv as HTMLElement).dataset.setIndex || '0');
+      const minutes = parseInt(target.value) || 0;
+
+      const workout = getState().currentWorkout as Workout;
+      workout.exercises[exerciseIndex].sets[setIndex].duration = minutes * 60; // Store as seconds
+
+      setState({ currentWorkout: workout });
     });
   });
 
@@ -278,36 +381,71 @@ export function attachEditWorkoutEventListeners(): void {
 
       if (!exerciseDiv) return;
 
-      const weightInput = exerciseDiv.querySelector('.new-set-weight') as HTMLInputElement;
-      const repsInput = exerciseDiv.querySelector('.new-set-reps') as HTMLInputElement;
-      const rpeInput = exerciseDiv.querySelector('.new-set-rpe') as HTMLInputElement;
-
-      const weight = parseFloat(weightInput?.value || '0');
-      const reps = parseInt(repsInput?.value || '0');
-      const rpe = parseInt(rpeInput?.value || '80');
-
-      if (!weight || !reps) {
-        alert('Please enter weight and reps');
-        return;
-      }
-
+      // Get exercise type from DOM
+      const exerciseType = exerciseDiv.getAttribute('data-exercise-type') || 'strength';
       const workout = getState().currentWorkout as Workout;
       const setNumber = workout.exercises[exerciseIndex].sets.length + 1;
 
-      workout.exercises[exerciseIndex].sets.push({
-        setNumber,
-        weight,
-        reps,
-        rpe,
-        restTime: 60, // Default rest time
-      });
+      if (exerciseType === 'cardio') {
+        const durationInput = exerciseDiv.querySelector('.new-set-duration') as HTMLInputElement;
+        const minutes = parseInt(durationInput?.value || '0');
+
+        if (!minutes || minutes <= 0) {
+          alert('Please enter a duration');
+          return;
+        }
+
+        workout.exercises[exerciseIndex].sets.push({
+          setNumber,
+          duration: minutes * 60, // Store as seconds
+        });
+
+        if (durationInput) durationInput.value = '';
+      } else if (exerciseType === 'bodyweight') {
+        const repsInput = exerciseDiv.querySelector('.new-set-reps') as HTMLInputElement;
+        const reps = parseInt(repsInput?.value || '0');
+
+        if (!reps) {
+          alert('Please enter reps');
+          return;
+        }
+
+        workout.exercises[exerciseIndex].sets.push({
+          setNumber,
+          reps,
+          restTime: 60,
+        });
+
+        if (repsInput) repsInput.value = '';
+      } else {
+        // strength
+        const weightInput = exerciseDiv.querySelector('.new-set-weight') as HTMLInputElement;
+        const repsInput = exerciseDiv.querySelector('.new-set-reps') as HTMLInputElement;
+        const rpeInput = exerciseDiv.querySelector('.new-set-rpe') as HTMLInputElement;
+
+        const weight = parseFloat(weightInput?.value || '0');
+        const reps = parseInt(repsInput?.value || '0');
+        const rpe = parseInt(rpeInput?.value || '80');
+
+        if (!weight || !reps) {
+          alert('Please enter weight and reps');
+          return;
+        }
+
+        workout.exercises[exerciseIndex].sets.push({
+          setNumber,
+          weight,
+          reps,
+          rpe,
+          restTime: 60,
+        });
+
+        if (weightInput) weightInput.value = '';
+        if (repsInput) repsInput.value = '';
+        if (rpeInput) rpeInput.value = '';
+      }
 
       setState({ currentWorkout: workout });
-
-      // Clear inputs
-      if (weightInput) weightInput.value = '';
-      if (repsInput) repsInput.value = '';
-      if (rpeInput) rpeInput.value = '';
     });
   });
 

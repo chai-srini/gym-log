@@ -123,14 +123,62 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+function getTimerColor(elapsedSeconds: number, presetSeconds: number): {
+  bgClass: string;
+  textClass: string;
+  strokeColor: string;
+} {
+  const ratio = elapsedSeconds / presetSeconds;
+
+  if (ratio <= 1) {
+    // Green zone (0 to preset)
+    return {
+      bgClass: 'bg-green-50',
+      textClass: 'text-green-600',
+      strokeColor: '#16a34a',
+    };
+  } else if (ratio <= 3) {
+    // Transition zone (preset to 3x preset)
+    // Linear interpolation from green to red
+    const t = (ratio - 1) / 2; // 0 to 1
+
+    // Green #16a34a to Red #dc2626
+    const r = Math.round(22 + (220 - 22) * t);
+    const g = Math.round(163 + (38 - 163) * t);
+    const b = Math.round(74 + (38 - 74) * t);
+
+    const intensity = t < 0.5 ? 'green' : (t < 0.75 ? 'yellow' : 'orange');
+    return {
+      bgClass: `bg-${intensity}-50`,
+      textClass: `text-${intensity}-600`,
+      strokeColor: `rgb(${r}, ${g}, ${b})`,
+    };
+  } else {
+    // Red zone (3x preset and beyond)
+    return {
+      bgClass: 'bg-red-50',
+      textClass: 'text-red-600',
+      strokeColor: '#dc2626',
+    };
+  }
+}
+
 function renderRestTimer(timerState: any): string {
-  const minutes = Math.floor(timerState.remainingSeconds / 60);
-  const seconds = timerState.remainingSeconds % 60;
-  const progress = ((timerState.totalSeconds - timerState.remainingSeconds) / timerState.totalSeconds) * 100;
+  const minutes = Math.floor(timerState.elapsedSeconds / 60);
+  const seconds = timerState.elapsedSeconds % 60;
+
+  // Progress: 0% at 0s, 100% at preset, stays at 100% after
+  const progress = Math.min((timerState.elapsedSeconds / timerState.presetSeconds) * 100, 100);
+
+  // Get color based on elapsed time
+  const { bgClass, textClass, strokeColor } = getTimerColor(timerState.elapsedSeconds, timerState.presetSeconds);
+
+  const circumference = 2 * Math.PI * 88; // r=88
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
 
   return `
     <div id="rest-timer-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
-      <div class="bg-white rounded-2xl p-8 mx-4 max-w-md w-full shadow-2xl">
+      <div class="${bgClass} rounded-2xl p-8 mx-4 max-w-md w-full shadow-2xl border-2 border-opacity-30">
         <div class="text-center">
           <h2 class="text-2xl font-bold text-gray-900 mb-2">Rest Timer</h2>
           <p class="text-sm text-gray-600 mb-6">Take a break between sets</p>
@@ -138,25 +186,19 @@ function renderRestTimer(timerState: any): string {
           <div class="relative mb-6">
             <svg class="transform -rotate-90 w-48 h-48 mx-auto">
               <circle cx="96" cy="96" r="88" stroke="#e5e7eb" stroke-width="8" fill="none" />
-              <circle cx="96" cy="96" r="88" stroke="#2563eb" stroke-width="8" fill="none" stroke-dasharray="553" stroke-dashoffset="${553 * (1 - progress / 100)}" stroke-linecap="round" class="transition-all duration-1000" />
+              <circle cx="96" cy="96" r="88" stroke="${strokeColor}" stroke-width="8" fill="none" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeDashoffset}" stroke-linecap="round" class="transition-all duration-1000" />
             </svg>
             <div class="absolute inset-0 flex items-center justify-center">
               <div class="text-center">
-                <div id="rest-timer-display" class="text-6xl font-bold text-gray-900 tabular-nums">
+                <div id="rest-timer-display" class="${textClass} text-6xl font-bold tabular-nums">
                   ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}
                 </div>
-                <div class="text-sm text-gray-500 mt-1">remaining</div>
+                <div class="text-sm text-gray-600 mt-1">elapsed</div>
               </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-3 gap-2 mb-4">
-            <button id="rest-timer-add-15" class="py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition font-medium text-sm">+15s</button>
-            <button id="rest-timer-add-30" class="py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition font-medium text-sm">+30s</button>
-            <button id="rest-timer-add-60" class="py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition font-medium text-sm">+1m</button>
-          </div>
-
-          <button id="rest-timer-skip" class="w-full py-4 px-6 bg-blue-600 text-white rounded-lg text-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition">Skip Rest</button>
+          <button id="rest-timer-skip" class="w-full py-4 px-6 bg-blue-600 text-white rounded-lg text-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition">End Rest</button>
         </div>
       </div>
     </div>
@@ -168,9 +210,133 @@ function renderExercise(exercise: any, exerciseIndex: number, exerciseData?: Exe
   const lastSet = exercise.sets[exercise.sets.length - 1];
   const links = exerciseData?.links || [];
   const hasLinks = links.length > 0;
+  const exerciseType = exerciseData?.type || 'strength';
+
+  // Helper to render set display based on type
+  const renderSetDisplay = (set: Set) => {
+    if (exerciseType === 'cardio') {
+      const minutes = Math.round((set.duration || 0) / 60);
+      return `
+        <div class="flex items-center justify-between text-sm bg-gray-50 p-2 rounded">
+          <span class="font-medium text-gray-600">Activity</span>
+          <span class="text-gray-800">Duration: ${minutes} min</span>
+        </div>
+      `;
+    } else if (exerciseType === 'bodyweight') {
+      return `
+        <div class="flex items-center justify-between text-sm bg-gray-50 p-2 rounded">
+          <span class="font-medium text-gray-600">Set ${set.setNumber}</span>
+          <span class="text-gray-800">${set.reps} reps</span>
+          <span class="text-gray-500">Rest ${set.restTime}s</span>
+        </div>
+      `;
+    } else {
+      // strength
+      return `
+        <div class="flex items-center justify-between text-sm bg-gray-50 p-2 rounded">
+          <span class="font-medium text-gray-600">Set ${set.setNumber}</span>
+          <span class="text-gray-800">${set.weight} ${settings.weightUnit} × ${set.reps} reps</span>
+          <span class="text-gray-500">RPE ${set.rpe}% • ${set.restTime}s</span>
+        </div>
+      `;
+    }
+  };
+
+  // Helper to render input form based on type
+  const renderInputForm = () => {
+    if (exerciseType === 'cardio') {
+      const lastDuration = lastSet?.duration || 0;
+      const minutes = Math.round(lastDuration / 60);
+      return `
+        <div class="mb-3">
+          <label class="block text-xs font-medium text-gray-600 mb-1">Duration (minutes)</label>
+          <input
+            type="number"
+            class="set-input w-full p-2 border border-gray-300 rounded"
+            data-exercise="${exerciseIndex}"
+            data-field="duration"
+            value="${minutes || ''}"
+            placeholder="30">
+        </div>
+      `;
+    } else if (exerciseType === 'bodyweight') {
+      return `
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Reps</label>
+            <input
+              type="number"
+              class="set-input w-full p-2 border border-gray-300 rounded"
+              data-exercise="${exerciseIndex}"
+              data-field="reps"
+              value="${lastSet ? lastSet.reps : ''}"
+              placeholder="12">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Rest (sec)</label>
+            <input
+              type="number"
+              class="set-input w-full p-2 border border-gray-300 rounded"
+              data-exercise="${exerciseIndex}"
+              data-field="restTime"
+              value="${lastSet ? lastSet.restTime : settings.defaultRestTime}"
+              placeholder="60">
+          </div>
+        </div>
+      `;
+    } else {
+      // strength
+      return `
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Weight (${settings.weightUnit})</label>
+            <input
+              type="number"
+              class="set-input w-full p-2 border border-gray-300 rounded"
+              data-exercise="${exerciseIndex}"
+              data-field="weight"
+              value="${lastSet ? lastSet.weight : ''}"
+              placeholder="185">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Reps</label>
+            <input
+              type="number"
+              class="set-input w-full p-2 border border-gray-300 rounded"
+              data-exercise="${exerciseIndex}"
+              data-field="reps"
+              value="${lastSet ? lastSet.reps : ''}"
+              placeholder="8">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">RPE (%)</label>
+            <input
+              type="number"
+              class="set-input w-full p-2 border border-gray-300 rounded"
+              data-exercise="${exerciseIndex}"
+              data-field="rpe"
+              value="${lastSet ? lastSet.rpe : settings.defaultRPE}"
+              placeholder="80">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Rest (sec)</label>
+            <input
+              type="number"
+              class="set-input w-full p-2 border border-gray-300 rounded"
+              data-exercise="${exerciseIndex}"
+              data-field="restTime"
+              value="${lastSet ? lastSet.restTime : settings.defaultRestTime}"
+              placeholder="60">
+          </div>
+        </div>
+      `;
+    }
+  };
+
+  const buttonText = exerciseType === 'cardio' ? '✓ Log Activity' : '+ Add Set';
 
   return `
-    <div class="bg-white rounded-lg p-4 shadow-md border border-gray-200" data-exercise-index="${exerciseIndex}">
+    <div class="bg-white rounded-lg p-4 shadow-md border border-gray-200" data-exercise-index="${exerciseIndex}" data-exercise-type="${exerciseType}">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-lg font-semibold text-gray-800">${exercise.exerciseName}</h3>
         <button
@@ -224,63 +390,16 @@ function renderExercise(exercise: any, exerciseIndex: number, exerciseData?: Exe
       <!-- Sets List -->
       ${exercise.sets.length > 0 ? `
         <div class="space-y-2 mb-4">
-          ${exercise.sets.map((set: Set) => `
-            <div class="flex items-center justify-between text-sm bg-gray-50 p-2 rounded">
-              <span class="font-medium text-gray-600">Set ${set.setNumber}</span>
-              <span class="text-gray-800">${set.weight} ${settings.weightUnit} × ${set.reps} reps</span>
-              <span class="text-gray-500">RPE ${set.rpe}% • ${set.restTime}s</span>
-            </div>
-          `).join('')}
+          ${exercise.sets.map((set: Set) => renderSetDisplay(set)).join('')}
         </div>
-      ` : '<p class="text-sm text-gray-500 mb-4">No sets yet</p>'}
+      ` : `<p class="text-sm text-gray-500 mb-4">${exerciseType === 'cardio' ? 'No activity logged yet' : 'No sets yet'}</p>`}
 
       <!-- Add Set Form -->
-      <div class="grid grid-cols-2 gap-2 mb-3">
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Weight (${settings.weightUnit})</label>
-          <input
-            type="number"
-            class="set-input w-full p-2 border border-gray-300 rounded"
-            data-exercise="${exerciseIndex}"
-            data-field="weight"
-            value="${lastSet ? lastSet.weight : ''}"
-            placeholder="185">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Reps</label>
-          <input
-            type="number"
-            class="set-input w-full p-2 border border-gray-300 rounded"
-            data-exercise="${exerciseIndex}"
-            data-field="reps"
-            value="${lastSet ? lastSet.reps : ''}"
-            placeholder="8">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">RPE (%)</label>
-          <input
-            type="number"
-            class="set-input w-full p-2 border border-gray-300 rounded"
-            data-exercise="${exerciseIndex}"
-            data-field="rpe"
-            value="${lastSet ? lastSet.rpe : settings.defaultRPE}"
-            placeholder="80">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Rest (sec)</label>
-          <input
-            type="number"
-            class="set-input w-full p-2 border border-gray-300 rounded"
-            data-exercise="${exerciseIndex}"
-            data-field="restTime"
-            value="${lastSet ? lastSet.restTime : settings.defaultRestTime}"
-            placeholder="60">
-        </div>
-      </div>
+      ${renderInputForm()}
       <button
         class="add-set-btn w-full py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"
         data-exercise="${exerciseIndex}">
-        + Add Set
+        ${buttonText}
       </button>
     </div>
   `;
@@ -440,21 +559,6 @@ export function attachWorkoutEventListeners(): void {
   restTimerSkip?.addEventListener('click', () => {
     stopRestTimer();
   });
-
-  const restTimerAdd15 = document.getElementById('rest-timer-add-15');
-  restTimerAdd15?.addEventListener('click', () => {
-    addTimerTime(15);
-  });
-
-  const restTimerAdd30 = document.getElementById('rest-timer-add-30');
-  restTimerAdd30?.addEventListener('click', () => {
-    addTimerTime(30);
-  });
-
-  const restTimerAdd60 = document.getElementById('rest-timer-add-60');
-  restTimerAdd60?.addEventListener('click', () => {
-    addTimerTime(60);
-  });
 }
 
 function addSetHandler(exerciseIndex: number): void {
@@ -463,31 +567,65 @@ function addSetHandler(exerciseIndex: number): void {
 
   inputs.forEach((input: any) => {
     const field = input.dataset.field;
-    setData[field] = field === 'weight' ? parseFloat(input.value) : parseInt(input.value);
+    if (field === 'weight') {
+      setData[field] = parseFloat(input.value);
+    } else {
+      setData[field] = parseInt(input.value);
+    }
   });
 
-  // Validation
-  if (!setData.weight || !setData.reps) {
-    alert('Please enter weight and reps');
-    return;
-  }
+  // Get exercise type from DOM
+  const exerciseCard = document.querySelector(`[data-exercise-index="${exerciseIndex}"]`);
+  const exerciseType = exerciseCard?.getAttribute('data-exercise-type') || 'strength';
 
   const { currentWorkout } = getState();
   const currentExercise = currentWorkout?.exercises?.[exerciseIndex];
   const setNumber = (currentExercise?.sets.length || 0) + 1;
 
-  const newSet: Set = {
-    setNumber,
-    weight: setData.weight,
-    reps: setData.reps,
-    rpe: setData.rpe || 80,
-    restTime: setData.restTime || 60,
-  };
+  let newSet: Set;
+
+  // Conditional validation and set creation based on type
+  if (exerciseType === 'cardio') {
+    const minutes = setData.duration;
+    if (!minutes || minutes <= 0) {
+      alert('Please enter a duration');
+      return;
+    }
+    newSet = {
+      setNumber,
+      duration: minutes * 60, // Store as seconds
+    };
+  } else if (exerciseType === 'bodyweight') {
+    if (!setData.reps) {
+      alert('Please enter reps');
+      return;
+    }
+    newSet = {
+      setNumber,
+      reps: setData.reps,
+      restTime: setData.restTime || 60,
+    };
+  } else {
+    // strength
+    if (!setData.weight || !setData.reps) {
+      alert('Please enter weight and reps');
+      return;
+    }
+    newSet = {
+      setNumber,
+      weight: setData.weight,
+      reps: setData.reps,
+      rpe: setData.rpe || 80,
+      restTime: setData.restTime || 60,
+    };
+  }
 
   addSetToExercise(exerciseIndex, newSet);
 
-  // Start rest timer after adding set
-  startRestTimer(newSet.restTime);
+  // Start rest timer after adding set (except for cardio)
+  if (exerciseType !== 'cardio' && newSet.restTime) {
+    startRestTimer(newSet.restTime);
+  }
 }
 
 async function completeWorkoutHandler(): Promise<void> {

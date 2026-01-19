@@ -1,9 +1,27 @@
-import { getAllWorkouts, getWorkout, deleteWorkout, createTemplateFromWorkout } from '../db';
+import { getAllWorkouts, getWorkout, deleteWorkout, createTemplateFromWorkout, getExerciseByName } from '../db';
 import { setState, quickStartWorkout, getState } from '../app-state';
-import type { Workout } from '../types';
+import type { Workout, ExerciseLibraryItem } from '../types';
 
 export async function renderHistoryScreen(): Promise<string> {
   const workouts = await getAllWorkouts();
+
+  // Fetch exercise library data for all exercises in all workouts
+  const exerciseDataMap = new Map<string, ExerciseLibraryItem>();
+  const allExerciseNames = new Set<string>();
+  workouts.forEach(workout => {
+    workout.exercises.forEach(ex => allExerciseNames.add(ex.exerciseName));
+  });
+
+  const exerciseDataPromises = Array.from(allExerciseNames).map(name =>
+    getExerciseByName(name)
+  );
+  const exerciseDataResults = await Promise.all(exerciseDataPromises);
+  Array.from(allExerciseNames).forEach((name, idx) => {
+    const data = exerciseDataResults[idx];
+    if (data) {
+      exerciseDataMap.set(name, data);
+    }
+  });
 
   if (workouts.length === 0) {
     return `
@@ -35,7 +53,7 @@ export async function renderHistoryScreen(): Promise<string> {
     `;
   }
 
-  const workoutCards = workouts.map((workout) => renderWorkoutCard(workout)).join('');
+  const workoutCards = workouts.map((workout) => renderWorkoutCard(workout, exerciseDataMap)).join('');
 
   return `
     <div class="min-h-screen flex flex-col bg-gray-50">
@@ -59,7 +77,7 @@ export async function renderHistoryScreen(): Promise<string> {
   `;
 }
 
-function renderWorkoutCard(workout: Workout): string {
+function renderWorkoutCard(workout: Workout, exerciseDataMap: Map<string, ExerciseLibraryItem>): string {
   const exerciseCount = workout.exercises.length;
   const totalSets = workout.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
   const date = new Date(workout.startTime).toLocaleDateString('en-US', {
@@ -106,7 +124,7 @@ function renderWorkoutCard(workout: Workout): string {
       </button>
 
       <div data-workout-details="${workout.id}" class="workout-details hidden border-t border-gray-200 p-4 bg-gray-50">
-        ${renderWorkoutDetails(workout)}
+        ${renderWorkoutDetails(workout, exerciseDataMap)}
         <div class="mt-4 grid grid-cols-2 gap-2">
           <button
             data-quick-start-id="${workout.id}"
@@ -134,7 +152,7 @@ function renderWorkoutCard(workout: Workout): string {
   `;
 }
 
-function renderWorkoutDetails(workout: Workout): string {
+function renderWorkoutDetails(workout: Workout, exerciseDataMap: Map<string, ExerciseLibraryItem>): string {
   if (workout.exercises.length === 0) {
     return '<p class="text-sm text-gray-500 italic">No exercises recorded</p>';
   }
@@ -143,25 +161,51 @@ function renderWorkoutDetails(workout: Workout): string {
 
   return workout.exercises
     .map(
-      (exercise) => `
+      (exercise) => {
+        const exerciseData = exerciseDataMap.get(exercise.exerciseName);
+        const exerciseType = exerciseData?.type || 'strength';
+
+        return `
     <div class="mb-4 last:mb-0">
       <h3 class="font-semibold text-gray-900 mb-2">${exercise.exerciseName}</h3>
       ${exercise.notes ? `<p class="text-sm text-gray-600 italic mb-2">${exercise.notes}</p>` : ''}
       <div class="space-y-1">
         ${exercise.sets
           .map(
-            (set, idx) => `
+            (set, idx) => {
+              if (exerciseType === 'cardio') {
+                const minutes = Math.round((set.duration || 0) / 60);
+                return `
+          <div class="text-sm text-gray-700 flex items-center">
+            <span class="font-medium text-gray-500 w-20">Activity:</span>
+            <span class="font-semibold">Duration: ${minutes} min</span>
+          </div>
+        `;
+              } else if (exerciseType === 'bodyweight') {
+                return `
+          <div class="text-sm text-gray-700 flex items-center">
+            <span class="font-medium text-gray-500 w-12">Set ${idx + 1}:</span>
+            <span class="font-semibold">${set.reps} reps</span>
+            <span class="text-gray-500 ml-2">(Rest ${set.restTime}s)</span>
+          </div>
+        `;
+              } else {
+                // strength
+                return `
           <div class="text-sm text-gray-700 flex items-center">
             <span class="font-medium text-gray-500 w-12">Set ${idx + 1}:</span>
             <span class="font-semibold">${set.weight} ${settings.weightUnit} × ${set.reps} reps</span>
             <span class="text-gray-500 ml-2">(RPE ${set.rpe}%, Rest ${set.restTime}s)</span>
           </div>
-        `
+        `;
+              }
+            }
           )
           .join('')}
       </div>
     </div>
-  `
+  `;
+      }
     )
     .join('');
 }
