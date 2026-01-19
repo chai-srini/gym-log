@@ -7,6 +7,7 @@ import { renderHistoryScreen, attachHistoryEventListeners } from './screens/hist
 import { renderSettingsScreen, attachSettingsEventListeners } from './screens/settings';
 import { renderExerciseLibraryScreen, attachExerciseLibraryEventListeners } from './screens/exercise-library';
 import { renderEditWorkoutScreen, attachEditWorkoutEventListeners } from './screens/edit-workout';
+import { renderTemplatesScreen, attachTemplatesEventListeners } from './screens/templates';
 
 // Initialize database
 await initDB();
@@ -45,6 +46,10 @@ async function render() {
     case 'edit-workout':
       html = await renderEditWorkoutScreen();
       attachListeners = attachEditWorkoutEventListeners;
+      break;
+    case 'templates':
+      html = await renderTemplatesScreen();
+      attachListeners = attachTemplatesEventListeners;
       break;
     default:
       html = '<div>Unknown screen</div>';

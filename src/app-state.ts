@@ -2,10 +2,11 @@
  * Simple app state management
  */
 
-import type { Workout, Exercise, Set, AppSettings } from './types';
+import type { Workout, Exercise, Set, AppSettings, WorkoutTemplate, Screen as ScreenType } from './types';
 import { DEFAULT_SETTINGS } from './types';
+import { incrementTemplateUsage } from './db';
 
-export type Screen = 'home' | 'workout' | 'history' | 'settings' | 'exercise-library' | 'edit-workout';
+export type Screen = ScreenType;
 
 interface AppState {
   currentScreen: Screen;
@@ -94,6 +95,35 @@ export function quickStartWorkout(lastWorkout: Workout): void {
       notes: '',
     },
   });
+}
+
+export function startWorkoutFromTemplate(template: WorkoutTemplate): void {
+  const now = new Date();
+
+  // Create exercises with names from template, empty sets
+  const exercises: Exercise[] = template.exercises.map((exerciseName) => ({
+    exerciseName,
+    notes: '',
+    sets: [],
+  }));
+
+  setState({
+    currentScreen: 'workout',
+    currentWorkout: {
+      name: template.name,
+      date: now.toISOString().split('T')[0],
+      startTime: now.toISOString(),
+      exercises: exercises,
+      notes: '',
+    },
+  });
+
+  // Increment template usage asynchronously
+  if (template.id) {
+    incrementTemplateUsage(template.id).catch((error) => {
+      console.error('Failed to increment template usage:', error);
+    });
+  }
 }
 
 export function addExerciseToWorkout(exerciseName: string): void {

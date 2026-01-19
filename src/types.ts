@@ -53,6 +53,21 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultRestTime: 60,
 };
 
+// Screen types for navigation
+export type Screen = 'home' | 'workout' | 'history' | 'settings' | 'exercise-library' | 'edit-workout' | 'templates';
+
+// Workout template interface
+export interface WorkoutTemplate {
+  id?: number;
+  name: string;                    // e.g., "Push Day"
+  description: string;             // e.g., "Chest, shoulders, triceps"
+  exercises: string[];             // Just exercise names, no sets
+  isStarter: boolean;              // True for pre-built templates
+  useCount: number;                // Track usage for sorting
+  lastUsed: string;                // ISO timestamp
+  createdAt: string;               // ISO timestamp
+}
+
 // Starter exercises as specified in requirements
 export const STARTER_EXERCISES: Array<{ name: string; category: ExerciseCategory }> = [
   // Push exercises
@@ -81,4 +96,38 @@ export const STARTER_EXERCISES: Array<{ name: string; category: ExerciseCategory
 
   // Arm exercises
   { name: 'Dumbbell Curl', category: 'Arms' },
+];
+
+// Starter workout templates
+export const STARTER_TEMPLATES: Array<{ name: string; description: string; exercises: string[] }> = [
+  {
+    name: 'Push Day',
+    description: 'Chest, shoulders, triceps',
+    exercises: ['Bench Press', 'Overhead Press', 'Dumbbell Fly', 'Dips'],
+  },
+  {
+    name: 'Pull Day',
+    description: 'Back and biceps',
+    exercises: ['Deadlift', 'Pull-ups', 'Barbell Row', 'Dumbbell Curl'],
+  },
+  {
+    name: 'Leg Day',
+    description: 'Lower body',
+    exercises: ['Squat', 'Romanian Deadlift', 'Leg Press', 'Leg Curl'],
+  },
+  {
+    name: 'Upper Body',
+    description: 'Full upper body workout',
+    exercises: ['Bench Press', 'Barbell Row', 'Overhead Press', 'Pull-ups', 'Dumbbell Curl', 'Dips'],
+  },
+  {
+    name: 'Lower Body',
+    description: 'Full lower body workout',
+    exercises: ['Squat', 'Romanian Deadlift', 'Leg Press', 'Leg Curl', 'Leg Extension'],
+  },
+  {
+    name: 'Full Body',
+    description: 'Complete full body workout',
+    exercises: ['Squat', 'Bench Press', 'Deadlift', 'Pull-ups', 'Overhead Press'],
+  },
 ];

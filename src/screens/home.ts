@@ -52,6 +52,11 @@ export async function renderHomeScreen(): Promise<string> {
           <!-- Footer Actions -->
           <section class="mt-8 grid grid-cols-2 gap-2">
             <button
+              id="templates-btn"
+              class="py-3 px-4 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 active:bg-purple-300 transition text-sm font-medium min-h-touch tap-highlight-transparent">
+              📋 Templates
+            </button>
+            <button
               id="exercise-library-btn"
               class="py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition text-sm font-medium min-h-touch tap-highlight-transparent">
               📚 Exercise Library
@@ -63,7 +68,7 @@ export async function renderHomeScreen(): Promise<string> {
             </button>
             <button
               id="settings-btn"
-              class="py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition text-sm font-medium min-h-touch tap-highlight-transparent col-span-2">
+              class="py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition text-sm font-medium min-h-touch tap-highlight-transparent">
               ⚙️ Settings
             </button>
           </section>
@@ -142,6 +147,11 @@ export function attachHomeEventListeners(): void {
   const exerciseLibraryButton = document.getElementById('exercise-library-btn');
   exerciseLibraryButton?.addEventListener('click', () => {
     setState({ currentScreen: 'exercise-library' });
+  });
+
+  const templatesButton = document.getElementById('templates-btn');
+  templatesButton?.addEventListener('click', () => {
+    setState({ currentScreen: 'templates' });
   });
 
   // Quick Start buttons on recent workout cards

@@ -4,8 +4,8 @@
  */
 
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import type { Workout, ExerciseLibraryItem } from './types';
-import { STARTER_EXERCISES } from './types';
+import type { Workout, ExerciseLibraryItem, WorkoutTemplate } from './types';
+import { STARTER_EXERCISES, STARTER_TEMPLATES } from './types';
 
 // Database schema definition
 interface GymLogDB extends DBSchema {
@@ -19,10 +19,15 @@ interface GymLogDB extends DBSchema {
     value: ExerciseLibraryItem;
     indexes: { 'name': string; 'lastUsed': string };
   };
+  templates: {
+    key: number;
+    value: WorkoutTemplate;
+    indexes: { 'name': string; 'lastUsed': string; 'isStarter': boolean };
+  };
 }
 
 const DB_NAME = 'gym-log';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbInstance: IDBPDatabase<GymLogDB> | null = null;
 
@@ -70,11 +75,26 @@ export async function initDB(): Promise<IDBPDatabase<GymLogDB>> {
           });
         });
       }
+
+      // Migrate from version 2 to version 3: Add templates object store
+      if (oldVersion < 3) {
+        // Create templates object store
+        const templatesStore = db.createObjectStore('templates', {
+          keyPath: 'id',
+          autoIncrement: true,
+        });
+        templatesStore.createIndex('name', 'name', { unique: false });
+        templatesStore.createIndex('lastUsed', 'lastUsed', { unique: false });
+        templatesStore.createIndex('isStarter', 'isStarter', { unique: false });
+      }
     },
   });
 
   // Initialize with starter exercises if empty
   await initializeStarterExercises();
+
+  // Initialize with starter templates if empty
+  await initializeStarterTemplates();
 
   return dbInstance;
 }
@@ -103,6 +123,35 @@ async function initializeStarterExercises(): Promise<void> {
 
     await tx.done;
     console.log(`Added ${STARTER_EXERCISES.length} starter exercises`);
+  }
+}
+
+/**
+ * Initialize database with starter templates
+ */
+async function initializeStarterTemplates(): Promise<void> {
+  const db = await initDB();
+  const count = await db.count('templates');
+
+  // Only add starter templates if the templates store is empty
+  if (count === 0) {
+    console.log('Initializing database with starter templates...');
+    const tx = db.transaction('templates', 'readwrite');
+    const store = tx.objectStore('templates');
+
+    const now = new Date().toISOString();
+    for (const template of STARTER_TEMPLATES) {
+      await store.add({
+        ...template,
+        isStarter: true,
+        useCount: 0,
+        lastUsed: now,
+        createdAt: now,
+      });
+    }
+
+    await tx.done;
+    console.log(`Added ${STARTER_TEMPLATES.length} starter templates`);
   }
 }
 
@@ -248,8 +297,10 @@ export async function clearAllData(): Promise<void> {
   const db = await initDB();
   await db.clear('workouts');
   await db.clear('exercises');
-  // Re-initialize with starter exercises
+  await db.clear('templates');
+  // Re-initialize with starter data
   await initializeStarterExercises();
+  await initializeStarterTemplates();
 }
 
 /**
@@ -264,4 +315,91 @@ export async function getDBStats(): Promise<{
     workoutCount: await db.count('workouts'),
     exerciseCount: await db.count('exercises'),
   };
+}
+
+// ====================
+// TEMPLATE OPERATIONS
+// ====================
+
+/**
+ * Add a new template to the database
+ */
+export async function addTemplate(template: Omit<WorkoutTemplate, 'id'>): Promise<number> {
+  const db = await initDB();
+  return await db.add('templates', template as WorkoutTemplate);
+}
+
+/**
+ * Get a template by ID
+ */
+export async function getTemplate(id: number): Promise<WorkoutTemplate | undefined> {
+  const db = await initDB();
+  return await db.get('templates', id);
+}
+
+/**
+ * Get all templates
+ */
+export async function getAllTemplates(): Promise<WorkoutTemplate[]> {
+  const db = await initDB();
+  return await db.getAll('templates');
+}
+
+/**
+ * Get templates sorted by usage (most used first)
+ */
+export async function getTemplatesByUsage(): Promise<WorkoutTemplate[]> {
+  const templates = await getAllTemplates();
+  return templates.sort((a, b) => b.useCount - a.useCount);
+}
+
+/**
+ * Update an existing template
+ */
+export async function updateTemplate(template: WorkoutTemplate): Promise<void> {
+  const db = await initDB();
+  await db.put('templates', template);
+}
+
+/**
+ * Delete a template by ID
+ */
+export async function deleteTemplate(id: number): Promise<void> {
+  const db = await initDB();
+  await db.delete('templates', id);
+}
+
+/**
+ * Increment template usage when it's used to start a workout
+ */
+export async function incrementTemplateUsage(id: number): Promise<void> {
+  const db = await initDB();
+  const template = await db.get('templates', id);
+
+  if (template) {
+    template.useCount += 1;
+    template.lastUsed = new Date().toISOString();
+    await db.put('templates', template);
+  }
+}
+
+/**
+ * Create a template from an existing workout
+ */
+export async function createTemplateFromWorkout(
+  workout: Workout,
+  name: string,
+  description: string
+): Promise<number> {
+  const template: Omit<WorkoutTemplate, 'id'> = {
+    name,
+    description,
+    exercises: workout.exercises.map((ex) => ex.exerciseName),
+    isStarter: false,
+    useCount: 0,
+    lastUsed: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+
+  return await addTemplate(template);
 }

@@ -1,4 +1,4 @@
-import { getAllWorkouts, getWorkout, deleteWorkout } from '../db';
+import { getAllWorkouts, getWorkout, deleteWorkout, createTemplateFromWorkout } from '../db';
 import { setState, quickStartWorkout, getState } from '../app-state';
 import type { Workout } from '../types';
 
@@ -118,6 +118,11 @@ function renderWorkoutCard(workout: Workout): string {
             class="edit-workout-btn py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 transition font-medium min-h-touch tap-highlight-transparent">
             ✏️ Edit
           </button>
+          <button
+            data-save-template-id="${workout.id}"
+            class="save-template-btn py-3 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 active:bg-purple-800 transition font-medium min-h-touch tap-highlight-transparent col-span-2">
+            💾 Save as Template
+          </button>
         </div>
         <button
           data-delete-workout-id="${workout.id}"
@@ -226,6 +231,42 @@ export function attachHistoryEventListeners(): void {
           currentScreen: 'edit-workout',
           currentWorkout: workout
         });
+      }
+    });
+  });
+
+  // Save as Template buttons
+  const saveTemplateButtons = document.querySelectorAll('.save-template-btn');
+  saveTemplateButtons.forEach((button) => {
+    button.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const workoutId = (button as HTMLElement).getAttribute('data-save-template-id');
+      if (!workoutId) return;
+
+      const workout = await getWorkout(Number(workoutId));
+      if (!workout) return;
+
+      // Prompt for template name (default to workout name or "My Template")
+      const defaultName = workout.name || 'My Template';
+      const templateName = prompt('Enter template name:', defaultName);
+      if (!templateName || templateName.trim() === '') return;
+
+      // Prompt for template description
+      const templateDescription = prompt(
+        'Enter template description (optional):',
+        `${workout.exercises.length} exercises`
+      );
+
+      try {
+        await createTemplateFromWorkout(
+          workout,
+          templateName.trim(),
+          templateDescription?.trim() || ''
+        );
+        alert(`Template "${templateName}" created successfully!`);
+      } catch (error) {
+        console.error('Error creating template:', error);
+        alert('Failed to create template. Please try again.');
       }
     });
   });
