@@ -97,7 +97,7 @@ export function stopRestTimer(): void {
  * Add time to the current timer (no longer used in count-up timer)
  * Kept for backward compatibility but does nothing
  */
-export function addTimerTime(seconds: number): void {
+export function addTimerTime(_seconds: number): void {
   // No-op in count-up timer
   return;
 }

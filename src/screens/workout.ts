@@ -5,7 +5,7 @@
 import { getState, addExerciseToWorkout, addSetToExercise, cancelWorkout, setState, updateWorkoutName, deleteExerciseFromWorkout } from '../app-state';
 import { getAllExercises, addWorkout, incrementExerciseUsage, getExerciseByName } from '../db';
 import type { Set, ExerciseLibraryItem } from '../types';
-import { startRestTimer, stopRestTimer, addTimerTime, getTimerState, subscribeToTimer, requestNotificationPermission } from '../utils/rest-timer';
+import { startRestTimer, stopRestTimer, getTimerState, subscribeToTimer, requestNotificationPermission } from '../utils/rest-timer';
 import { openEditLinksModal } from '../utils/edit-links-modal';
 
 let workoutStartTime: number = Date.now();

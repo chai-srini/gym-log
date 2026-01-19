@@ -48,10 +48,10 @@ function workoutsToCSVString(workouts: Workout[]): string {
           escapeCsvField(date),
           escapeCsvField(exerciseName),
           escapeCsvField(i + 1),
-          escapeCsvField(set.weight),
-          escapeCsvField(set.reps),
-          escapeCsvField(set.rpe),
-          escapeCsvField(set.restTime),
+          escapeCsvField(set.weight ?? ''),
+          escapeCsvField(set.reps ?? ''),
+          escapeCsvField(set.rpe ?? ''),
+          escapeCsvField(set.restTime ?? ''),
           escapeCsvField(combinedNotes),
         ];
         rows.push(row.join(','));
