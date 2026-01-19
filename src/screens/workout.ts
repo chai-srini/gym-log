@@ -3,9 +3,10 @@
  */
 
 import { getState, addExerciseToWorkout, addSetToExercise, cancelWorkout, setState, updateWorkoutName, deleteExerciseFromWorkout } from '../app-state';
-import { getAllExercises, addWorkout, incrementExerciseUsage } from '../db';
-import type { Set } from '../types';
+import { getAllExercises, addWorkout, incrementExerciseUsage, getExerciseByName } from '../db';
+import type { Set, ExerciseLibraryItem } from '../types';
 import { startRestTimer, stopRestTimer, addTimerTime, getTimerState, subscribeToTimer, requestNotificationPermission } from '../utils/rest-timer';
+import { openEditLinksModal } from '../utils/edit-links-modal';
 
 let workoutStartTime: number = Date.now();
 let timerInterval: number | null = null;
@@ -18,6 +19,21 @@ export async function renderWorkoutScreen(): Promise<string> {
 
   if (!currentWorkout) {
     return '<div>Error: No active workout</div>';
+  }
+
+  // Fetch exercise library data for all exercises in the workout
+  const exerciseDataMap = new Map<string, ExerciseLibraryItem>();
+  if (currentWorkout.exercises && currentWorkout.exercises.length > 0) {
+    const exerciseDataPromises = currentWorkout.exercises.map(ex =>
+      getExerciseByName(ex.exerciseName)
+    );
+    const exerciseDataResults = await Promise.all(exerciseDataPromises);
+    currentWorkout.exercises.forEach((ex, idx) => {
+      const data = exerciseDataResults[idx];
+      if (data) {
+        exerciseDataMap.set(ex.exerciseName, data);
+      }
+    });
   }
 
   startTimer();
@@ -63,7 +79,7 @@ export async function renderWorkoutScreen(): Promise<string> {
         <!-- Exercises List -->
         <div id="exercises-container" class="space-y-4">
           ${currentWorkout.exercises && currentWorkout.exercises.length > 0
-            ? currentWorkout.exercises.map((ex, idx) => renderExercise(ex, idx)).join('')
+            ? currentWorkout.exercises.map((ex, idx) => renderExercise(ex, idx, exerciseDataMap.get(ex.exerciseName))).join('')
             : `
             <div class="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
               <p class="text-gray-500 text-lg">No exercises yet</p>
@@ -99,6 +115,12 @@ export async function renderWorkoutScreen(): Promise<string> {
       </main>
     </div>
   `;
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function renderRestTimer(timerState: any): string {
@@ -141,9 +163,11 @@ function renderRestTimer(timerState: any): string {
   `;
 }
 
-function renderExercise(exercise: any, exerciseIndex: number): string {
+function renderExercise(exercise: any, exerciseIndex: number, exerciseData?: ExerciseLibraryItem): string {
   const { settings } = getState();
   const lastSet = exercise.sets[exercise.sets.length - 1];
+  const links = exerciseData?.links || [];
+  const hasLinks = links.length > 0;
 
   return `
     <div class="bg-white rounded-lg p-4 shadow-md border border-gray-200" data-exercise-index="${exerciseIndex}">
@@ -156,6 +180,46 @@ function renderExercise(exercise: any, exerciseIndex: number): string {
           🗑️
         </button>
       </div>
+
+      <!-- Video Links Section -->
+      ${hasLinks ? `
+        <div class="mb-3">
+          <button
+            class="video-toggle-btn flex items-center gap-2 text-purple-600 hover:text-purple-700 font-medium text-sm transition"
+            data-exercise-index="${exerciseIndex}">
+            <span class="toggle-icon">▶</span>
+            <span>📹 Videos (${links.length})</span>
+          </button>
+          <div class="video-links-container hidden mt-2 space-y-2 pl-6" data-exercise-index="${exerciseIndex}">
+            ${links.map(link => `
+              <div class="flex items-center gap-2 text-sm">
+                <span>🎥</span>
+                <a
+                  href="${escapeHtml(link.url)}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-blue-600 hover:underline flex-1 truncate">
+                  ${escapeHtml(link.title)}
+                </a>
+                <span class="text-gray-400">↗</span>
+              </div>
+            `).join('')}
+            <button
+              class="edit-links-btn text-xs text-purple-600 hover:text-purple-700 font-medium mt-1"
+              data-exercise-index="${exerciseIndex}">
+              ✏️ Edit Links
+            </button>
+          </div>
+        </div>
+      ` : `
+        <div class="mb-3">
+          <button
+            class="add-links-btn text-sm text-purple-600 hover:text-purple-700 font-medium"
+            data-exercise-index="${exerciseIndex}">
+            + Add video links
+          </button>
+        </div>
+      `}
 
       <!-- Sets List -->
       ${exercise.sets.length > 0 ? `
@@ -295,6 +359,58 @@ export function attachWorkoutEventListeners(): void {
 
       if (confirm(`Delete ${exerciseName}? All sets will be lost.`)) {
         deleteExerciseFromWorkout(exerciseIndex);
+      }
+    });
+  });
+
+  // Video Toggle buttons
+  document.querySelectorAll('.video-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const exerciseIndex = (e.currentTarget as HTMLElement).dataset.exerciseIndex;
+      const container = document.querySelector(`.video-links-container[data-exercise-index="${exerciseIndex}"]`);
+      const toggleIcon = (e.currentTarget as HTMLElement).querySelector('.toggle-icon');
+
+      if (container && toggleIcon) {
+        const isHidden = container.classList.contains('hidden');
+        if (isHidden) {
+          container.classList.remove('hidden');
+          toggleIcon.textContent = '▼';
+        } else {
+          container.classList.add('hidden');
+          toggleIcon.textContent = '▶';
+        }
+      }
+    });
+  });
+
+  // Edit Links buttons
+  document.querySelectorAll('.edit-links-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const exerciseIndex = parseInt((e.currentTarget as HTMLElement).dataset.exerciseIndex || '0');
+      const { currentWorkout } = getState();
+      const exerciseName = currentWorkout?.exercises?.[exerciseIndex]?.exerciseName;
+
+      if (exerciseName) {
+        const exerciseData = await getExerciseByName(exerciseName);
+        if (exerciseData?.id) {
+          await openEditLinksModal(exerciseData.id, exerciseName, true);
+        }
+      }
+    });
+  });
+
+  // Add Links buttons
+  document.querySelectorAll('.add-links-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const exerciseIndex = parseInt((e.currentTarget as HTMLElement).dataset.exerciseIndex || '0');
+      const { currentWorkout } = getState();
+      const exerciseName = currentWorkout?.exercises?.[exerciseIndex]?.exerciseName;
+
+      if (exerciseName) {
+        const exerciseData = await getExerciseByName(exerciseName);
+        if (exerciseData?.id) {
+          await openEditLinksModal(exerciseData.id, exerciseName, true);
+        }
       }
     });
   });

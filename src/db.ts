@@ -4,7 +4,7 @@
  */
 
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import type { Workout, ExerciseLibraryItem, WorkoutTemplate } from './types';
+import type { Workout, ExerciseLibraryItem, WorkoutTemplate, ExerciseVideoLink } from './types';
 import { STARTER_EXERCISES, STARTER_TEMPLATES } from './types';
 
 // Database schema definition
@@ -22,12 +22,12 @@ interface GymLogDB extends DBSchema {
   templates: {
     key: number;
     value: WorkoutTemplate;
-    indexes: { 'name': string; 'lastUsed': string; 'isStarter': boolean };
+    indexes: { 'name': string; 'lastUsed': string; 'isStarter': string };
   };
 }
 
 const DB_NAME = 'gym-log';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbInstance: IDBPDatabase<GymLogDB> | null = null;
 
@@ -87,6 +87,17 @@ export async function initDB(): Promise<IDBPDatabase<GymLogDB>> {
         templatesStore.createIndex('lastUsed', 'lastUsed', { unique: false });
         templatesStore.createIndex('isStarter', 'isStarter', { unique: false });
       }
+
+      // Migrate from version 3 to version 4: Add links field to exercises
+      if (oldVersion < 4) {
+        const exerciseStore = transaction.objectStore('exercises');
+        exerciseStore.getAll().then((exercises) => {
+          exercises.forEach((exercise) => {
+            (exercise as any).links = [];  // Initialize empty array
+            exerciseStore.put(exercise);
+          });
+        });
+      }
     },
   });
 
@@ -118,6 +129,7 @@ async function initializeStarterExercises(): Promise<void> {
         category: exercise.category,
         lastUsed: new Date().toISOString(),
         useCount: 0,
+        links: [],
       });
     }
 
@@ -232,6 +244,7 @@ export async function addExercise(name: string, category: string = 'Other'): Pro
     category: category as any,
     lastUsed: new Date().toISOString(),
     useCount: 0,
+    links: [],
   };
   return await db.add('exercises', exercise as ExerciseLibraryItem);
 }
@@ -284,6 +297,39 @@ export async function incrementExerciseUsage(exerciseName: string): Promise<void
 export async function deleteExercise(id: number): Promise<void> {
   const db = await initDB();
   await db.delete('exercises', id);
+}
+
+/**
+ * Get exercise by ID
+ */
+export async function getExerciseById(id: number): Promise<ExerciseLibraryItem | undefined> {
+  const db = await initDB();
+  return await db.get('exercises', id);
+}
+
+/**
+ * Get exercise by name (for quick lookup during workout)
+ */
+export async function getExerciseByName(name: string): Promise<ExerciseLibraryItem | undefined> {
+  const db = await initDB();
+  const exercises = await db.getAllFromIndex('exercises', 'name', name);
+  return exercises[0];
+}
+
+/**
+ * Update video links for an exercise by ID
+ */
+export async function updateExerciseLinks(
+  exerciseId: number,
+  links: ExerciseVideoLink[]
+): Promise<void> {
+  const db = await initDB();
+  const exercise = await db.get('exercises', exerciseId);
+
+  if (exercise) {
+    exercise.links = links;
+    await db.put('exercises', exercise);
+  }
 }
 
 // ====================

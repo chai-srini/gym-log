@@ -6,6 +6,7 @@ import { setState } from '../app-state';
 import { getAllExercises, addExercise, deleteExercise } from '../db';
 import { STARTER_EXERCISES } from '../types';
 import type { ExerciseLibraryItem, ExerciseCategory } from '../types';
+import { openEditLinksModal } from '../utils/edit-links-modal';
 
 const STARTER_EXERCISE_NAMES = STARTER_EXERCISES.map(ex => ex.name);
 
@@ -85,6 +86,21 @@ export async function renderExerciseLibraryScreen(): Promise<string> {
                 ➕ Add
               </button>
             </div>
+            <details class="mt-2">
+              <summary class="text-sm text-gray-600 cursor-pointer hover:text-gray-800 font-medium">+ Add video link (optional)</summary>
+              <div class="mt-3 space-y-2 pl-2">
+                <input
+                  id="new-exercise-link-title"
+                  type="text"
+                  placeholder="Video title (e.g., 'Form Tutorial')"
+                  class="w-full p-2 border border-gray-300 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <input
+                  id="new-exercise-link-url"
+                  type="url"
+                  placeholder="Video URL (e.g., https://youtube.com/...)"
+                  class="w-full p-2 border border-gray-300 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              </div>
+            </details>
           </div>
         </div>
 
@@ -128,6 +144,9 @@ function renderExerciseCard(exercise: ExerciseLibraryItem): string {
     'Other': 'bg-gray-100 text-gray-700',
   };
 
+  const links = exercise.links || [];
+  const hasLinks = links.length > 0;
+
   return `
     <div class="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition exercise-card" data-exercise-name="${exercise.name.toLowerCase()}" data-category="${exercise.category}">
       <div class="flex items-start justify-between">
@@ -152,8 +171,46 @@ function renderExerciseCard(exercise: ExerciseLibraryItem): string {
           <span class="text-2xl ml-3">💪</span>
         `}
       </div>
+
+      ${hasLinks ? `
+        <div class="mt-3 border-t border-gray-100 pt-3">
+          <button
+            class="toggle-videos-btn w-full text-left text-sm font-medium text-gray-700 hover:text-gray-900 flex items-center gap-2"
+            data-exercise-id="${exercise.id}">
+            <span class="toggle-icon">▶</span>
+            <span>📹 Videos (${links.length})</span>
+          </button>
+          <div class="videos-content hidden mt-2 space-y-2 pl-6">
+            ${links.map(link => `
+              <a
+                href="${escapeHtml(link.url)}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                <span>🎥</span>
+                <span class="flex-1 truncate">${escapeHtml(link.title)}</span>
+                <span class="text-xs">↗</span>
+              </a>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="mt-3 border-t border-gray-100 pt-3">
+        <button
+          data-exercise-id="${exercise.id}"
+          class="edit-links-btn w-full py-2 px-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 active:bg-purple-800 transition text-sm min-h-touch tap-highlight-transparent">
+          📹 Edit Video Links
+        </button>
+      </div>
     </div>
   `;
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 export function attachExerciseLibraryEventListeners(): void {
@@ -247,6 +304,43 @@ export function attachExerciseLibraryEventListeners(): void {
       }
     });
   });
+
+  // Toggle video section
+  const toggleVideoButtons = document.querySelectorAll('.toggle-videos-btn');
+  toggleVideoButtons.forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const card = btn.closest('.exercise-card');
+      const videosContent = card?.querySelector('.videos-content');
+      const toggleIcon = btn.querySelector('.toggle-icon');
+
+      if (videosContent && toggleIcon) {
+        const isHidden = videosContent.classList.contains('hidden');
+        if (isHidden) {
+          videosContent.classList.remove('hidden');
+          toggleIcon.textContent = '▼';
+        } else {
+          videosContent.classList.add('hidden');
+          toggleIcon.textContent = '▶';
+        }
+      }
+    });
+  });
+
+  // Edit video links buttons
+  const editLinksButtons = document.querySelectorAll('.edit-links-btn');
+  editLinksButtons.forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const exerciseId = (btn as HTMLElement).getAttribute('data-exercise-id');
+      if (!exerciseId) return;
+
+      const card = btn.closest('.exercise-card');
+      const exerciseName = card?.querySelector('h3')?.textContent?.trim() || 'Exercise';
+
+      await openEditLinksModal(Number(exerciseId), exerciseName, false);
+    });
+  });
 }
 
 async function addCustomExerciseHandler(input: HTMLInputElement, categorySelect: HTMLSelectElement): Promise<void> {
@@ -269,9 +363,41 @@ async function addCustomExerciseHandler(input: HTMLInputElement, categorySelect:
     return;
   }
 
+  // Get optional video link inputs
+  const linkTitleInput = document.getElementById('new-exercise-link-title') as HTMLInputElement;
+  const linkUrlInput = document.getElementById('new-exercise-link-url') as HTMLInputElement;
+  const linkTitle = linkTitleInput?.value.trim();
+  const linkUrl = linkUrlInput?.value.trim();
+
+  // Validate link if provided
+  if ((linkTitle || linkUrl) && (!linkTitle || !linkUrl)) {
+    alert('Please provide both title and URL for the video link, or leave both empty');
+    return;
+  }
+
+  // Validate URL format if provided
+  if (linkUrl) {
+    try {
+      new URL(linkUrl);
+    } catch {
+      alert('Please enter a valid URL (must start with http:// or https://)');
+      return;
+    }
+  }
+
   try {
-    await addExercise(exerciseName, category);
+    const exerciseId = await addExercise(exerciseName, category);
+
+    // If link was provided, add it to the exercise
+    if (linkTitle && linkUrl && exerciseId) {
+      const { updateExerciseLinks } = await import('../db');
+      await updateExerciseLinks(exerciseId, [{ title: linkTitle, url: linkUrl }]);
+    }
+
     input.value = '';
+    if (linkTitleInput) linkTitleInput.value = '';
+    if (linkUrlInput) linkUrlInput.value = '';
+
     // Re-render the screen
     setState({ currentScreen: 'exercise-library' });
   } catch (error) {
